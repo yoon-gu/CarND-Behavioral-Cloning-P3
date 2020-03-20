@@ -96,11 +96,11 @@ model.add(Conv2D(64, (3, 3), activation='relu'))
 model.add(Conv2D(64, (3, 3), activation='relu'))
 model.add(Flatten())
 model.add(Dense(100))
-model.add(Dropout(0.01))
+model.add(Dropout(0.1))
 model.add(Dense(50))
-model.add(Dropout(0.01))
+model.add(Dropout(0.1))
 model.add(Dense(10))
-model.add(Dropout(0.01))
+model.add(Dropout(0.1))
 model.add(Dense(1))
 
 
@@ -119,7 +119,7 @@ checkpoint = keras.callbacks.ModelCheckpoint(
 hist = model.fit_generator(train_generator, steps_per_epoch=len(train_samples) // b_size,
                            validation_data=validation_generator,
                            validation_steps=len(validation_samples) // b_size,
-                           epochs=5, callbacks=[checkpoint])
+                           epochs=3, callbacks=[checkpoint])
 
 
 model.save('model.h5')
