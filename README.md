@@ -6,6 +6,7 @@
 
 [image1]: ./examples/figure.png "Model Visualization"
 [image2]: ./examples/data_augmentation.png "Data Augmentation"
+[image3]: ./examples/histogram.png "Histogram"
 
 ### Files Submitted
 
@@ -36,18 +37,21 @@ The final model that I utilized is the NVIDIA's architecture and it was enough t
 ```python
 model = Sequential()
 # Preprocessing - Crop some top and bottom pixels and normalization.
-model.add(Cropping2D(cropping=((65,25), (0,0)), input_shape=(160,320,3)))
+model.add(Cropping2D(cropping=((65, 25), (0, 0)), input_shape=(160, 320, 3)))
 model.add(Lambda(lambda x: (x / 255.0) - 0.5))
 # NVIDIA's architecture
-model.add(Conv2D(24, (5, 5), strides=(2,2), activation='relu'))
-model.add(Conv2D(36, (5, 5), strides=(2,2), activation='relu'))
-model.add(Conv2D(48, (5, 5), strides=(2,2), activation='relu'))
+model.add(Conv2D(24, (5, 5), strides=(2, 2), activation='relu'))
+model.add(Conv2D(36, (5, 5), strides=(2, 2), activation='relu'))
+model.add(Conv2D(48, (5, 5), strides=(2, 2), activation='relu'))
 model.add(Conv2D(64, (3, 3), activation='relu'))
 model.add(Conv2D(64, (3, 3), activation='relu'))
 model.add(Flatten())
 model.add(Dense(100))
+model.add(Dropout(0.1))
 model.add(Dense(50))
+model.add(Dropout(0.1))
 model.add(Dense(10))
+model.add(Dropout(0.1))
 model.add(Dense(1))
 ```
 
@@ -75,9 +79,15 @@ flatten_1 (Flatten)          (None, 4224)              0
 _________________________________________________________________
 dense_1 (Dense)              (None, 100)               422500
 _________________________________________________________________
+dropout_1 (Dropout)          (None, 100)               0
+_________________________________________________________________
 dense_2 (Dense)              (None, 50)                5050
 _________________________________________________________________
+dropout_2 (Dropout)          (None, 50)                0
+_________________________________________________________________
 dense_3 (Dense)              (None, 10)                510
+_________________________________________________________________
+dropout_3 (Dropout)          (None, 10)                0
 _________________________________________________________________
 dense_4 (Dense)              (None, 1)                 11
 =================================================================
@@ -92,8 +102,9 @@ _________________________________________________________________
 
 My training data acquisition scheme are
 
-- A lab center line driving in clockwise (`4408` frames)
-- A lab center line driving in counter-clockwise (`4104` frames)
+- A lab center line driving in clockwise (`13224` frames) in the first track
+- A lab center line driving in counter-clockwise (`12312` frames) in the first track
+- A lab center line driving in clockwise (`12312` frames) in the second track
 - Very slow control when the car is driving on curved roads in both driving cases
 
 After train the neural network in the form of NVIDIA's architecture, I checked my performance by executing
@@ -104,31 +115,21 @@ python drive.py model.h5
 
 #### Data augmentation
 
-Training data was chosen to keep the vehicle driving on the road. I used a combination of center lane driving in clockwise and counter-clockwise. In addition, I augmented data by including left/right image with correction angle (`0.2`) and by flipping image frames.
+Training data was chosen to keep the vehicle driving on the road. I used a combination of center lane driving in clockwise, counter-clockwise in the first track, and clockwise in the second track. In addition, I augmented data by including left/right image with correction angle (`0.2`) and by flipping image frames (See `merge_data.py` and line from 59 to 79 in `model.py`)
 
 ![alt text][image2]
 
+You can easily see the angle's histogram in the following figure.
 
-```python
-df1 = pd.read_csv('./normal_lap/driving_log.csv', header=None)
-df2 = pd.read_csv('./backward_lap/driving_log.csv', header=None)
-df = pd.concat((df1, df2))
+![alt text][image3]
 
-# Data augmentation 1
-center_img_paths = df[0].values.tolist() + df[1].values.tolist() + df[2].values.tolist()
-x_train = np.array([mpimg.imread(img_path.strip())
-                    for img_path in center_img_paths])
-y_train = np.array(df[3].values.tolist()
-                   + (df[3].values + 0.2).tolist()
-                   + (df[3].values - 0.2).tolist())
+#### Solution Design Approach
 
-# Data augmentation 2
-x_train_flip = np.array([np.fliplr(img) for img in x_train])
-y_train_flip = -y_train.copy()
+The overall strategy for deriving model architecture was to keep the car running on center of the road.
 
-x_train = np.concatenate((x_train, x_train_flip))
-y_train = np.concatenate((y_train, y_train_flip))
-```
+First step was to use the convolutional neural network of the NVIDIA's architecture. It was introduced as powerful model by autonomous vehicle team at NIVIDA. Because they had successful to have training a real car, I think it is a good way to start with this model.
+
+To prevent over-fitted network, I added three dropout layers between fully-connected layers. To monitor fitness of the network, I extracted validation set in the 20% portion.
 
 #### Parameter tuning
 
