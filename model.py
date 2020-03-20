@@ -1,36 +1,87 @@
-from keras.optimizers import Adam, SGD
 from keras.models import Sequential
 from keras.layers import Flatten, Dense, Lambda, Cropping2D, Dropout
 from keras.layers.convolutional import Convolution2D, Conv2D
-import pandas as pd
-from pprint import pprint
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
-from keras.applications.inception_v3 import InceptionV3
-import keras.backend as K
+import os
+import csv
+from sklearn.model_selection import train_test_split
+import sklearn
+import keras
 
 
-df1 = pd.read_csv('./normal_lap/driving_log.csv', header=None)
-df2 = pd.read_csv('./backward_lap/driving_log.csv', header=None)
-print(len(df1))
-print(len(df2))
-df = pd.concat((df1, df2))
+lines = []
+data_path = './data/'
+with open(os.path.join(data_path, 'driving_log.csv')) as csvfile:
+    reader = csv.reader(csvfile)
+    for line in reader:
+        lines.append(line)
 
 
-center_img_paths = df[0].values.tolist() + df[1].values.tolist() + df[2].values.tolist()
-x_train = np.array([mpimg.imread(img_path.strip())
-                    for img_path in center_img_paths])
-y_train = np.array(df[3].values.tolist()
-                   + (df[3].values + 0.15).tolist()
-                   + (df[3].values - 0.15).tolist())
+center_images = []
+left_images = []
+right_images = []
+angles = []
+
+for line in lines:
+    center_img = line[0]
+    left_img = line[1].strip()
+    right_img = line[2].strip()
+
+    center_images.append(center_img)
+    left_images.append(left_img)
+    right_images.append(right_img)
+    angles.append(np.float(line[3]))
 
 
-x_train_flip = np.array([np.fliplr(img) for img in x_train])
-y_train_flip = -y_train.copy()
+correction = 0.2
 
-x_train = np.concatenate((x_train, x_train_flip))
-y_train = np.concatenate((y_train, y_train_flip))
+total_images = []
+total_angles = []
+
+total_images.extend(center_images)
+total_images.extend(left_images)
+total_images.extend(right_images)
+
+total_angles.extend(angles)
+total_angles.extend([angle + correction for angle in angles])
+total_angles.extend([angle - correction for angle in angles])
+
+
+samples = list(zip(total_images, total_angles))
+
+# Randomly split data into training and validation.
+train_samples, validation_samples = train_test_split(samples, test_size=0.2)
+
+
+# Generator function
+def generator(samples, batch_size=32):
+    num_samples = len(samples)
+    while 1:  # Loop forever so the generator never terminates
+        for offset in range(0, num_samples, batch_size):
+            batch_samples = samples[offset:offset+batch_size]
+
+            images = []
+            angles = []
+            for batch_sample in batch_samples:
+                name = os.path.join(data_path, 'IMG/') + \
+                    batch_sample[0].split('/')[-1]
+                image = mpimg.imread(name)
+                angle = float(batch_sample[1])
+                images.append(image)
+                angles.append(angle)
+                images.append(np.fliplr(image))
+                angles.append(-angle)
+
+            X_train = np.array(images)
+            y_train = np.array(angles)
+            yield sklearn.utils.shuffle(X_train, y_train)
+
+
+b_size = 32
+train_generator = generator(train_samples, batch_size=b_size)
+validation_generator = generator(validation_samples, batch_size=b_size)
 
 
 model = Sequential()
@@ -45,18 +96,43 @@ model.add(Conv2D(64, (3, 3), activation='relu'))
 model.add(Conv2D(64, (3, 3), activation='relu'))
 model.add(Flatten())
 model.add(Dense(100))
+model.add(Dropout(0.01))
 model.add(Dense(50))
+model.add(Dropout(0.01))
 model.add(Dense(10))
+model.add(Dropout(0.01))
 model.add(Dense(1))
 
 
-# Imports the Model API
+model.summary()
+
 
 # Compile the model
 model.compile(optimizer='adam', loss='mse')
 
-hist = model.fit(x_train, y_train, validation_split=0.2,
-                 shuffle=True, batch_size=32, epochs=3)
+
+filepath = "saved-model-{epoch:02d}.h5"
+checkpoint = keras.callbacks.ModelCheckpoint(
+    filepath, verbose=1, save_best_only=False, mode='max')
+
+
+hist = model.fit_generator(train_generator, steps_per_epoch=len(train_samples) // b_size,
+                           validation_data=validation_generator,
+                           validation_steps=len(validation_samples) // b_size,
+                           epochs=5, callbacks=[checkpoint])
 
 
 model.save('model.h5')
+
+
+# print the keys contained in the history object
+print(hist.history.keys())
+
+# plot the training and validation loss for each epoch
+plt.plot(hist.history['loss'])
+plt.plot(hist.history['val_loss'])
+plt.title('model mean squared error loss')
+plt.ylabel('mean squared error loss')
+plt.xlabel('epoch')
+plt.legend(['training set', 'validation set'], loc='upper right')
+plt.savefig('examples/figure.png', dpi=300)
